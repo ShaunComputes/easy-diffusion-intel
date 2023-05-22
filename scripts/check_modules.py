@@ -18,6 +18,7 @@ os_name = platform.system()
 modules_to_check = {
     "torch": ("1.11.0", "1.13.1", "2.0.0"),
     "torchvision": ("0.12.0", "0.14.1", "0.15.1"),
+    "intel-extension-for-pytorch": "1.13.120+xpu",
     "sdkit": "1.0.93",
     "stable-diffusion-sdkit": "2.1.4",
     "rich": "12.6.0",
@@ -38,11 +39,21 @@ def install(module_name: str, module_version: str):
     if module_name == "xformers" and (os_name == "Darwin" or is_amd_on_linux()):
         return
 
-    index_url = None
-    if module_name in ("torch", "torchvision"):
-        module_version, index_url = apply_torch_install_overrides(module_version)
+    if not is_intel_on_linux():
+        if module_name == "intel-extension-for-pytorch":
+            return;
 
-    if is_amd_on_linux():  # hack until AMD works properly on torch 2.0 (avoids black images on some cards)
+    index_url = None
+    links_url = None
+    if module_name in ("torch", "torchvision", "intel-extension-for-pytorch"):
+        module_version, index_url, links_url = apply_torch_install_overrides(module_version)
+
+    if is_intel_on_linux():
+        if module_name == "torch":
+            module_version = "1.13.0a0+git6c9b55e"
+        elif module_name == "torchvision":
+            module_version = "0.14.1a0+5e8e2f1"
+    elif is_amd_on_linux():  # hack until AMD works properly on torch 2.0 (avoids black images on some cards)
         if module_name == "torch":
             module_version = "1.13.1+rocm5.2"
         elif module_name == "torchvision":
@@ -56,6 +67,8 @@ def install(module_name: str, module_version: str):
     install_cmd = f"python -m pip install --upgrade {module_name}=={module_version}"
     if index_url:
         install_cmd += f" --index-url {index_url}"
+    if links_url:
+        install_cmd += f" --find-links {links_url}"
     if module_name == "sdkit" and version("sdkit") is not None:
         install_cmd += " -q"
 
@@ -107,13 +120,16 @@ def get_allowed_versions(module_name: str, allowed_versions: tuple):
 
 def apply_torch_install_overrides(module_version: str):
     index_url = None
+    links_url = None
     if os_name == "Windows":
         module_version += "+cu117"
         index_url = "https://download.pytorch.org/whl/cu117"
     elif is_amd_on_linux():
         index_url = "https://download.pytorch.org/whl/rocm5.2"
+    elif is_intel_on_linux():
+        links_url = "https://developer.intel.com/ipex-whl-stable-xpu"
 
-    return module_version, index_url
+    return module_version, index_url, links_url
 
 
 def include_cuda_versions(module_versions: tuple) -> tuple:
@@ -128,14 +144,19 @@ def include_cuda_versions(module_versions: tuple) -> tuple:
     return allowed_versions
 
 
-def is_amd_on_linux():
-    if os_name == "Linux":
-        with open("/proc/bus/pci/devices", "r") as f:
-            device_info = f.read()
-            if "amdgpu" in device_info and "nvidia" not in device_info:
-                return True
+def is_intel_on_linux():
+    if os_name != "Linux":
+        return False
+    return os.path.exists("/opt/intel/oneapi")
+    
 
-    return False
+def is_amd_on_linux():
+    if os_name != "Linux":
+        return False
+    with open("/proc/bus/pci/devices", "r") as f:
+        device_info = f.read()
+        if "amdgpu" in device_info and "nvidia" not in device_info:
+            return True
 
 
 def fail(module_name):

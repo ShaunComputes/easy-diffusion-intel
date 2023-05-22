@@ -397,6 +397,10 @@ def get_devices():
         if device in ("cpu", "mps"):
             return {"name": device_manager.get_processor_name()}
 
+        if device in ("xpu"):
+            import intel_extension_for_pytorch as ipex;
+            return {"name": ipex.xpu.get_device_name(0)}
+
         mem_free, mem_total = torch.cuda.mem_get_info(device)
         mem_free /= float(10**9)
         mem_total /= float(10**9)

@@ -22,11 +22,11 @@ mem_free_threshold = 0
 
 def get_device_delta(render_devices, active_devices):
     """
-    render_devices: 'cpu', or 'auto', or 'mps' or ['cuda:N'...]
-    active_devices: ['cpu', 'mps', 'cuda:N'...]
+    render_devices: 'cpu', or 'auto', or 'mps', or 'xpu' or ['cuda:N'...]
+    active_devices: ['cpu', 'mps', 'xpu', 'cuda:N'...]
     """
 
-    if render_devices in ("cpu", "auto", "mps"):
+    if render_devices in ("cpu", "auto", "mps", "xpu"):
         render_devices = [render_devices]
     elif render_devices is not None:
         if isinstance(render_devices, str):
@@ -35,7 +35,7 @@ def get_device_delta(render_devices, active_devices):
             render_devices = list(filter(lambda x: x.startswith("cuda:") or x == "mps", render_devices))
             if len(render_devices) == 0:
                 raise Exception(
-                    'Invalid render_devices value in config.json. Valid: {"render_devices": ["cuda:0", "cuda:1"...]}, or {"render_devices": "cpu"} or {"render_devices": "mps"} or {"render_devices": "auto"}'
+                    'Invalid render_devices value in config.json. Valid: {"render_devices": ["cuda:0", "cuda:1"...]}, or {"render_devices": "cpu"} or {"render_devices": "mps"} or {"render_devices": "auto"} or {"render_devices": "xpu"}'
                 )
 
             render_devices = list(filter(lambda x: is_device_compatible(x), render_devices))
@@ -45,7 +45,7 @@ def get_device_delta(render_devices, active_devices):
                 )
         else:
             raise Exception(
-                'Invalid render_devices value in config.json. Valid: {"render_devices": ["cuda:0", "cuda:1"...]}, or {"render_devices": "cpu"} or {"render_devices": "auto"}'
+                'Invalid render_devices value in config.json. Valid: {"render_devices": ["cuda:0", "cuda:1"...]}, or {"render_devices": "cpu"} or {"render_devices": "auto"} or {"render_devices": "xpu"}'
             )
     else:
         render_devices = ["auto"]
@@ -72,6 +72,15 @@ def is_mps_available():
         and torch.backends.mps.is_built()
     )
 
+def is_xpu_available():
+    if platform.system() == "Linux":
+        try:
+            import intel_extension_for_pytorch as ipex;
+            return ipex.xpu.is_available()
+        except ImportError as e:
+            log.info("Unable to import intel_extension_for_pytorch")
+            log.info(e)
+            return False
 
 def is_cuda_available():
     return torch.cuda.is_available()
@@ -79,6 +88,9 @@ def is_cuda_available():
 
 def auto_pick_devices(currently_active_devices):
     global mem_free_threshold
+
+    if is_xpu_available():
+        return ["xpu"]
 
     if is_mps_available():
         return ["mps"]
@@ -134,6 +146,13 @@ def device_init(context, device):
     """
 
     validate_device_id(device, log_prefix="device_init")
+
+    if "xpu" in device:
+        import intel_extension_for_pytorch as ipex;
+        context.device_name = ipex.xpu.get_device_name(0)
+        context.device = device
+        context.half_precision = False
+        log.info(f"Render device available as {context.device_name}")
 
     if "cuda" not in device:
         context.device = device
@@ -195,7 +214,7 @@ def validate_device_id(device, log_prefix=""):
     def is_valid():
         if not isinstance(device, str):
             return False
-        if device == "cpu" or device == "mps":
+        if device == "cpu" or device == "mps" or device == "xpu":
             return True
         if not device.startswith("cuda:") or not device[5:].isnumeric():
             return False
@@ -219,7 +238,7 @@ def is_device_compatible(device):
         log.error(str(e))
         return False
 
-    if device in ("cpu", "mps"):
+    if device in ("cpu", "mps", "xpu"):
         return True
     # Memory check
     try:
