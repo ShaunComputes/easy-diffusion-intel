@@ -43,7 +43,7 @@ if [ -e "ldm" ]; then mv ldm ldm-old; fi
 
 # Download the required packages
 if ! python ../scripts/check_modules.py; then
-    read -p "Press any key to continue"
+    read -p "Press any key to exit"
     exit 1
 fi
 
@@ -53,7 +53,7 @@ fi
 
 # Download the required models
 if ! python ../scripts/check_models.py; then
-    read -p "Press any key to continue"
+    read -p "Press any key to exit"
     exit 1
 fi
 

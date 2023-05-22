@@ -39,10 +39,16 @@ def install(module_name: str, module_version: str):
         return
 
     index_url = None
-    if module_name in ("torch", "torchvision"):
-        module_version, index_url = apply_torch_install_overrides(module_version)
+    links_url = None
+    if module_name in ("torch", "torchvision", "intel-extension-for-pytorch"):
+        module_version, index_url, links_url = apply_torch_install_overrides(module_version)
 
-    if is_amd_on_linux():  # hack until AMD works properly on torch 2.0 (avoids black images on some cards)
+    if is_xpu_on_linux():
+        if module_name == "torch":
+            module_version = "1.13.0a0+git6c9b55e"
+        elif module_name == "torchvision":
+            module_version = "0.14.1a0+5e8e2f1"
+    elif is_amd_on_linux():  # hack until AMD works properly on torch 2.0 (avoids black images on some cards)
         if module_name == "torch":
             module_version = "1.13.1+rocm5.2"
         elif module_name == "torchvision":
@@ -56,6 +62,8 @@ def install(module_name: str, module_version: str):
     install_cmd = f"python -m pip install --upgrade {module_name}=={module_version}"
     if index_url:
         install_cmd += f" --index-url {index_url}"
+    if links_url:
+        install_cmd += f" --find-links {links_url}"
     if module_name == "sdkit" and version("sdkit") is not None:
         install_cmd += " -q"
 
@@ -64,6 +72,9 @@ def install(module_name: str, module_version: str):
 
 
 def init():
+    if is_xpu_on_linux:
+        modules_to_check['intel-extension-for-pytorch'] = "1.13.120+xpu"
+
     for module_name, allowed_versions in modules_to_check.items():
         if os.path.exists(f"../src/{module_name}"):
             print(f"Skipping {module_name} update, since it's in developer/editable mode")
@@ -107,13 +118,16 @@ def get_allowed_versions(module_name: str, allowed_versions: tuple):
 
 def apply_torch_install_overrides(module_version: str):
     index_url = None
+    links_url = None
     if os_name == "Windows":
         module_version += "+cu117"
         index_url = "https://download.pytorch.org/whl/cu117"
     elif is_amd_on_linux():
         index_url = "https://download.pytorch.org/whl/rocm5.2"
+    elif is_xpu_on_linux():
+        links_url = "https://developer.intel.com/ipex-whl-stable-xpu"
 
-    return module_version, index_url
+    return module_version, index_url, links_url
 
 
 def include_cuda_versions(module_versions: tuple) -> tuple:
@@ -126,6 +140,12 @@ def include_cuda_versions(module_versions: tuple) -> tuple:
     allowed_versions += tuple(f"{v}+rocm5.4.2" for v in module_versions)
 
     return allowed_versions
+
+
+def is_xpu_on_linux():
+    if os_name != "Linux":
+        return False
+    return os.path.exists("/opt/intel/oneapi")
 
 
 def is_amd_on_linux():
