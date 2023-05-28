@@ -151,7 +151,7 @@ def device_init(context, device):
         import intel_extension_for_pytorch as ipex;
         context.device_name = ipex.xpu.get_device_name(0)
         context.device = device
-        context.half_precision = False
+        context.half_precision = True
         log.info(f"Render device available as {context.device_name}")
 
     if "cuda" not in device:
